@@ -17,18 +17,18 @@ static int sum;
 static os_graph_t *graph;
 static os_threadpool_t *tp;
 
-/* TODO: Define graph synchronization mechanisms. */
+/* Define graph synchronization mechanisms. */
 
-pthread_mutex_t graph_mutex;  // mutex-ul asociat grafului
-/* (daca incearca cineva sa acceseze graficul simultan, nu va functiona);
- * threadpool, graf si suma -> zone de memorie comune
+pthread_mutex_t graph_mutex;  // mutex associated with the graph
+/* (if someone tries to access the graph simultaneously, it won’t work);
+ * threadpool, graph, and sum -> shared memory regions
  */
 
-/* TODO: Define graph task argument. */
+/* Define graph task argument. */
 
 void prelucrate_currentNode(void *Node)
 {
-	//  parcurgerea si prelucrarea nodurilor din graf in paralel
+	// traversal and processing of graph nodes in parallel
 	os_node_t *node = (os_node_t *)Node;
 
 	if (graph->visited[node->id] == DONE)
@@ -44,19 +44,19 @@ void prelucrate_currentNode(void *Node)
 		if (graph->visited[node->neighbours[i]] == NOT_VISITED) {
 			os_task_t *t = create_task(prelucrate_currentNode, graph->nodes[node->neighbours[i]], NULL);
 
-			//  daca am nodurile 2 si 3 care au nodul 4 ca vecin
-			//  si ruleaza in paralel thread-ul pentru 2 si thread-ul pentru 3 => daca nu pun processing
-			//  o sa prelucreze nodul 4 de 2 ori
+			// if nodes 2 and 3 both have node 4 as a neighbor
+			// and threads for nodes 2 and 3 run in parallel => without marking as PROCESSING,
+			// node 4 would be processed twice
 			graph->visited[node->neighbours[i]] = PROCESSING;
 			pthread_mutex_unlock(&graph_mutex);
-			enqueue_task(tp, t);  // task-urile nu sunt executate automat
+			enqueue_task(tp, t);  // tasks are not executed automatically
 		}
 	}
 }
 
 static void process_node(unsigned int idx)
 {
-	/* TODO: Implement thread-pool based processing of graph. */
+	/* Implement thread-pool based processing of graph. */
 
 	os_task_t *t = create_task(prelucrate_currentNode, graph->nodes[idx], NULL);
 	enqueue_task(tp, t);
@@ -77,15 +77,15 @@ int main(int argc, char *argv[])
 
 	graph = create_graph_from_file(input_file);
 
-	/* TODO: Initialize graph synchronization mechanisms. */
+	/* Initialize graph synchronization mechanisms. */
 
 	pthread_mutex_init(&graph_mutex, NULL);
 	tp = create_threadpool(NUM_THREADS);
 
-	/*  se incepe cu procesarea primului nod
-	 * => creare task pentru nod 0 ce va fi adaugat in coada
-	 * in main e thread-ul principal => nodul 0 ruleaza pe thread-ul
-	 * principal, urmand ca restul nodurilor sa ruleze pe thread-uri paralele
+	/* start with processing the first node
+	 * => create a task for node 0 that will be added to the queue
+	 * in main, the main thread executes => node 0 runs on the main thread,
+	 * while the remaining nodes will run on parallel threads
 	 */
 	process_node(0);
 
