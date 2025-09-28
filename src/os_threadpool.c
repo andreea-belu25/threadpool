@@ -36,18 +36,18 @@ void destroy_task(os_task_t *t)
 /* Put a new task to threadpool task queue. */
 void enqueue_task(os_threadpool_t *tp, os_task_t *t)
 {
-	assert(tp != NULL);  // iese din program daca threadpool-ul este NULL
+	assert(tp != NULL);  // program exits if the threadpool is NULL
 	assert(t != NULL);
 
-	/* TODO: Enqueue task to the shared task queue. Use synchronization. */
+	/* Enqueue task to the shared task queue. Use synchronization. */
 
-	/* mutex = controleaza accesul la o zona de memorie comuna
-	 * pasii de mai jos se repeta pana s-a terminat
-	 * executia tuturor thread-uilor (celalalte thread-uri
-	 * asteapta finalizarea task-ului de pe thread-ul curent care lucreaza)
+	/* mutex = controls access to a shared memory region
+	 * the steps below are repeated until the execution of all
+	 * threads is finished (other threads wait for the completion of the
+	 * task from the current thread that is working)
 	 */
-	pthread_mutex_lock(&tp->mutex);  // blocare acces zona de memorie comuna
-	list_add(&tp->head, &t->list);  //  thread-ul curent adauga in lista
+	pthread_mutex_lock(&tp->mutex);  // lock access to shared memory region
+	list_add(&tp->head, &t->list);  // current thread adds to the list
 	pthread_mutex_unlock(&tp->mutex);
 
 	pthread_cond_broadcast(&tp->cond);
@@ -68,54 +68,53 @@ static int queue_is_empty(os_threadpool_t *tp)
  * Return NULL if work is complete, i.e. no task will become available,
  * i.e. all threads are going to block.
  */
-
 os_task_t *dequeue_task(os_threadpool_t *tp)
 {
-	//  lock intr-o fct => unlock pana la iesirea din fct
+	// lock in a function => unlock before exiting the function
 	os_task_t *t;
 
-	/* TODO: Dequeue task from the shared task queue. Use synchronization. */
+	/* Dequeue task from the shared task queue. Use synchronization. */
 
 	pthread_mutex_lock(&tp->mutex);
 
-	//  daca nu mai am de prelucrat task-uri => ies din fct
+	// if there are no more tasks to process => exit function
 	if (tp->should_continue == 0) {
 		pthread_mutex_unlock(&tp->mutex);
 		return NULL;
 	}
 	int was_queue_empty = 0;
 
-	if (queue_is_empty(tp)) { // lista goala (contine doar santinela)
-		/* daca coada e goala => thread-ul care ajunge aici e blocat
-		 * si va astepta pana apare un task nou. Celalalte thread-uri
-		 * pot avea task-uri pe care sa le execute in paralel.
+	if (queue_is_empty(tp)) { // empty list (contains only sentinel)
+		/* if the queue is empty => the thread that gets here is blocked
+		 * and will wait until a new task appears. Other threads
+		 * may still have tasks to execute in parallel.
 		 */
-		//  thread blocat - thread se opreste din executie si apoi reia de unde s-a oprit
+		// blocked thread - thread stops execution and then resumes where it left off
 		tp->num_threadsLocked += 1;
 		was_queue_empty = 1;
 
-		//  coada goala + threadpool care mai poate continua => se asteapta un task nou
+		// empty queue + threadpool that can still continue => wait for a new task
 		while (queue_is_empty(tp) && tp->should_continue)
-		    //  se da implicit unlock la mutex
-		    //  se asteapta pana primeste un semnal si apoi se continua rularea 
+		    // unlocks mutex implicitly
+		    // waits until a signal is received, then resumes execution
 			pthread_cond_wait(&tp->cond, &tp->mutex);
 
-		//  coada goala + threadpool care nu mai poate continua executia => se iese din fct
-		//  nu mai avem ce elimina din coada
+		// empty queue + threadpool that can no longer continue execution => exit function
+		// nothing left to remove from the queue
 		if (tp->should_continue == 0)
 			return NULL;
 	}
 
 	if (was_queue_empty) {
-		//  lock si unlock- blocare/ deblocare acces la zona de memorie
+		// lock and unlock - control access to shared memory
 		pthread_mutex_lock(&tp->mutex);
-		//  thread-ul curent a fost deblocat
+		// current thread has been unblocked
 		tp->num_threadsLocked -= 1;
 	}
 
-	//  daca coada nu e goala => iau ultimul task si-l sterg
-	//  aritmetica pe pointeri
-	t = (os_task_t *)((char *)tp->head.prev - 24); //= t->list;
+	// if the queue is not empty => take the last task and remove it
+	// pointer arithmetic
+	t = (os_task_t *)((char *)tp->head.prev - 24); // = t->list;
 	list_del(tp->head.prev);
 	pthread_mutex_unlock(&tp->mutex);
 	return t;
@@ -131,9 +130,9 @@ static void *thread_loop_function(void *arg)
 
 		t = dequeue_task(tp);
 		if (t == NULL)
-			break;  //  oprire cand nu mai am ce scoate din coada de task-uri
-		t->action(t->argument);  //  rulare task
-		destroy_task(t);  //  dezalocare memorie
+			break;  // stop when there are no more tasks to take from the task queue
+		t->action(t->argument);  // run task
+		destroy_task(t);  // free memory
 	}
 
 	return NULL;
@@ -142,20 +141,20 @@ static void *thread_loop_function(void *arg)
 /* Wait completion of all threads. This is to be called by the main thread. */
 void wait_for_completion(os_threadpool_t *tp)
 {
-	/* TODO: Wait for all worker threads. Use synchronization. */
+	/* Wait for all worker threads. Use synchronization. */
 	while (!(tp->num_threadsLocked == tp->num_threads && queue_is_empty(tp)))
 		continue;
 
 	/*
-	 * Daca toate thread-urile sunt pe pauza si asteapta ca un task sa devina disponibil,
-	 * asta inseamna ca nici un thread nu va putea crea task-uri.
-	 * Daca si coada de task-uri este goala, asta inseamna ca nu va mai putea fi creat
-	 * nici un task, adica threadpool-ul trebuie oprit.
+	 * If all threads are paused and waiting for a task to become available,
+	 * that means no thread will be able to create new tasks.
+	 * If the task queue is also empty, that means no more tasks can be created,
+	 * i.e. the threadpool must stop.
 	 */
 	tp->should_continue = 0;
-	pthread_cond_broadcast(&tp->cond);  // deblocheaza toate thread-urile blocate
+	pthread_cond_broadcast(&tp->cond);  // unblock all blocked threads
 
-	// cand toate thread-urile sunt blocate si coada e goala => STOP (nu mai pot fi adaugate task-uri)
+	// when all threads are blocked and the queue is empty => STOP (no more tasks can be added)
 	/* Join all worker threads. */
 	for (unsigned int i = 0; i < tp->num_threads; i++)
 		pthread_join(tp->threads[i], NULL);
@@ -172,7 +171,7 @@ os_threadpool_t *create_threadpool(unsigned int num_threads)
 
 	list_init(&tp->head);
 
-	/* TODO: Initialize synchronization data. */
+	/* Initialize synchronization data. */
 
 	tp->should_continue = 1;
 	pthread_mutex_init(&tp->mutex, NULL);
@@ -194,7 +193,7 @@ void destroy_threadpool(os_threadpool_t *tp)
 {
 	os_list_node_t *n, *p;
 
-	/* TODO: Cleanup synchronization data. */
+	/* Cleanup synchronization data. */
 
 	pthread_mutex_destroy(&tp->mutex);
 	pthread_cond_destroy(&tp->cond);
