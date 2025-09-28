@@ -29,7 +29,7 @@ typedef struct os_threadpool {
 	 */
 	os_list_node_t head;
 
-	/* TODO: Define threadpool / queue synchronization data. */
+	/* Define threadpool / queue synchronization data. */
 
 	/* mutex - ensures that when the task queue is modified
 	 * there will be no data loss (avoids the scenario where two
