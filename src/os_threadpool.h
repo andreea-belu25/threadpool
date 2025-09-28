@@ -16,8 +16,8 @@ typedef struct {
 typedef struct os_threadpool {
 	unsigned int num_threads;
 	pthread_t *threads;
-	/* should_continue => threadpool-ul ar trebui sa se opreasca din
-	 * asteptarea task-urilor sau nu
+	/* should_continue => whether the threadpool should stop
+	 * waiting for tasks or not
 	 */
 	unsigned int num_threadsLocked;
 	/*
@@ -29,12 +29,12 @@ typedef struct os_threadpool {
 	 */
 	os_list_node_t head;
 
-	/* TODO: Define threapool / queue synchronization data. */
+	/* TODO: Define threadpool / queue synchronization data. */
 
-	/* mutex - asigura ca atunci cand se modifica coada de task-uri
-	 * nu o sa existe pierderi de date (evita scenariul in care am doua
-	 * thread-uri, unul imi scrie la o adresa de memorie si altul la aceeasi,
-	 * facand suprascriere, deci pierderea datelor)
+	/* mutex - ensures that when the task queue is modified
+	 * there will be no data loss (avoids the scenario where two
+	 * threads both write to the same memory address, causing
+	 * overwriting, and thus data loss)
 	 */
 	pthread_mutex_t mutex;
 	pthread_cond_t cond;
